@@ -1,51 +1,66 @@
-#include <map>
-
 #ifndef __REFLECTION_H__
 #define __REFLECTION_H__
 
 //! author : chenyao
 
+#undef RUNTIME_CLASS
+#define RUNTIME_CLASS(class_name) ((CRuntimeClass*)(&class_name::class##class_name))
+
 #undef DECLARE_CLASS
-#define DECLARE_CLASS(name) \
+#define DECLARE_CLASS(class_name) \
     public: \
         static CObject * CreateObject(); \
-    private: \
-        static ClassInfo m_classInfo;
+        static CRuntimeClass class##class_name; \
+        virtual CRuntimeClass * GetRuntimeClass();
 
 #undef IMPLEMENT_CLASS
-#define IMPLEMENT_CLASS(name) \
-    CObject * name::CreateObject() { return new name; } \
-    ClassInfo name::m_classInfo(#name, name::CreateObject);
+#define IMPLEMENT_CLASS(class_name) \
+    CObject * class_name::CreateObject() \
+        { return new class_name; } \
+    CRuntimeClass class_name::class##class_name = \
+        { #class_name, class_name::CreateObject, NULL }; \
+    CRuntimeClass * class_name::GetRuntimeClass() \
+        { return RUNTIME_CLASS(class_name); } \
+    CLASSINIT _init_##class_name(RUNTIME_CLASS(class_name));
 
 class CObject;
-typedef CObject * (*CreateObjectFunc)();
 
-class ClassInfo
+struct CRuntimeClass
 {
-public:
-    ClassInfo(std::string className, CreateObjectFunc object);
-    CObject * CreateObject() {
-        if (m_object) {
-            return m_object();
-        }
-        return NULL;
-    }
+    const char * m_className;
+    CObject * (*m_pfnCreateObject)();
+    CObject * CreateObject();
 
-public:
-    std::string m_name;
-    CreateObjectFunc m_object;
+    static CRuntimeClass * FromName(const char * className);
+    static CObject * CreateObject(const char * className);
+
+    static CRuntimeClass * m_firstClass;
+    CRuntimeClass * m_nextClass;       // linked list of registered classes
+};
+
+struct CLASSINIT { 
+    CLASSINIT(CRuntimeClass* newClass) { 
+        newClass->m_nextClass = CRuntimeClass::m_firstClass;
+        CRuntimeClass::m_firstClass = newClass;
+    } 
 };
 
 class CObject
 {
-public:
-    ~CObject() {}
-    virtual std::string ToString() = 0;
+protected:
+    CObject() {}
 
 public:
-    static CObject * CreateObject(const std::string & className);
-    static void Register(ClassInfo * classInfo);
-    static std::map<std::string, ClassInfo*> m_classInfoMap; 
+    virtual ~CObject() {}
+    virtual CRuntimeClass * GetRuntimeClass();
+    static struct CRuntimeClass classCObject;
+
+private:
+    CObject(const CObject& object);              // no implementation
+    CObject& operator=(const CObject& object);   // no implementation
+
+public:
+    virtual const char * string() = 0;
 };
 
 #endif

@@ -1,54 +1,74 @@
 #include <iostream>
+#include <string.h>
 #include "reflection.h"
 
-std::map<std::string, ClassInfo*> CObject::m_classInfoMap; 
+struct CRuntimeClass CObject::classCObject = 
+    { "CObject", NULL, NULL };
 
-void CObject::Register(ClassInfo * classInfo) {
-    if (NULL == classInfo)
-        return;
+CRuntimeClass * CRuntimeClass::m_firstClass = NULL;
 
-    if (m_classInfoMap.find(classInfo->m_name) == m_classInfoMap.end()) {
-        m_classInfoMap.insert(std::map<std::string, ClassInfo*>::value_type(classInfo->m_name, classInfo));
-    }
+static CLASSINIT _init_CObject(&CObject::classCObject);
+
+CRuntimeClass * CObject::GetRuntimeClass()
+{
+    return RUNTIME_CLASS(CObject);
 }
 
-CObject * CObject::CreateObject(const std::string & className)
+CObject * CRuntimeClass::CreateObject()
 {
-    std::map<std::string, ClassInfo*>::const_iterator iter = CObject::m_classInfoMap.find(className);
-    if (iter == CObject::m_classInfoMap.end())
+    if (NULL == m_pfnCreateObject)
+        return NULL;
+    return (*m_pfnCreateObject)();
+}
+
+CRuntimeClass * CRuntimeClass::FromName(const char * className)
+{
+    for (CRuntimeClass * iter = CRuntimeClass::m_firstClass; 
+            NULL != iter->m_nextClass; iter = iter->m_nextClass) {
+        if (0 == strcmp(className, iter->m_className)) {
+            return iter;
+        }
+    }
+    return NULL;
+}
+
+CObject * CRuntimeClass::CreateObject(const char * className) 
+{
+    CRuntimeClass* runtimeClass = FromName(className);
+
+    if (NULL == runtimeClass)
         return NULL;
 
-    return iter->second->CreateObject();
+    return runtimeClass->CreateObject();
 }
-
-ClassInfo::ClassInfo(std::string className, CreateObjectFunc object)
-    : m_name(className), m_object(object)
-{ 
-    CObject::Register(this);
-}
-
 
 class CDemoObject : public CObject
 {
     DECLARE_CLASS(CDemoObject)
 public:
-    virtual std::string ToString() { return m_classInfo.m_name; }
+    virtual const char * string() { return GetRuntimeClass()->m_className; }
 };
 
 IMPLEMENT_CLASS(CDemoObject)
 
-CObject * FactoryCreate(const std::string & className)
+class CLargeObject : public CObject
 {
-    return CObject::CreateObject(className);
-}
+    DECLARE_CLASS(CLargeObject)
+public:
+    virtual const char * string() { return GetRuntimeClass()->m_className; }
+};
+
+IMPLEMENT_CLASS(CLargeObject)
+
 
 int main()
 {
-    CObject * object = FactoryCreate("CDemoObject");
+    CObject * object = CRuntimeClass::CreateObject("CLargeObject");
+
     if (NULL == object)
         return 0;
 
-    std::cout << object->ToString() << std::endl;
+    std::cout << object->string() << std::endl;
 
     delete object;
 
